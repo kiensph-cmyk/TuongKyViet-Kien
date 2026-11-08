@@ -1283,7 +1283,6 @@ export function handleEngineOutput(text) {
         }
     }
 }
-}
 
 // =====================================================================
 // HỆ THỐNG CỨU HỘ: CHỐNG CRASH TRÊN IOS VÀ WEBVIEW (ZALO/FB/TIKTOK)

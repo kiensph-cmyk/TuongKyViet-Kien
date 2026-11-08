@@ -1007,6 +1007,9 @@ function renderMultiPVList() {
         if (line.pvMoves && line.pvMoves.length > 0) {
             pvVietnamese = formatPvSequenceVietnamese(line.pvMoves, state.currentNode.fen, 10);
         }
+        if (!pvVietnamese && notation) {
+            pvVietnamese = notation;
+        }
 
         html += `
             <div class="multipv-item" data-move="${line.bestMove}" style="color: ${blockColor}; cursor: pointer;">
@@ -1027,8 +1030,8 @@ function renderMultiPVList() {
                     <span>NPS: ${npsStr}</span>
                 </div>
                 ${pvVietnamese ? `
-                <div class="multipv-pv-seq" style="margin-top: 6px; padding: 6px 8px; background: rgba(0,0,0,0.035); border: 1px dashed rgba(0,0,0,0.12); border-radius: 6px; font-size: 12.5px; font-family: monospace, sans-serif; font-weight: 600; line-height: 1.5; color: #1e293b; word-break: break-word;">
-                    <span style="font-size: 11px; color: #64748b; font-weight: normal; display: block; margin-bottom: 2px;">Dãy tính toán:</span>
+                <div class="multipv-pv-seq" style="margin-top: 8px; padding: 7px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #1a73e8; border-radius: 4px; font-size: 13px; font-family: monospace, sans-serif; font-weight: 600; line-height: 1.5; color: #0f172a; word-break: break-word;">
+                    <span style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 3px;">Ký hiệu tiếng Việt:</span>
                     ${pvVietnamese}
                 </div>` : ''}
             </div>`;

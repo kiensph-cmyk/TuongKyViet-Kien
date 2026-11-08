@@ -725,6 +725,11 @@ body.mode-vsbot .ai-tab-btn:not([data-tab="title"]) { display: none !important; 
 /* =========================================================
    9. DANH SÁCH VÁN ĐẤU (GAME LIST) TRONG TAB TIÊU ĐỀ
    ========================================================= */
+.ai-content[style*="display: none"],
+.ai-content[style*="display:none"] {
+    display: none !important;
+}
+
 .ai-content[style*="display: block"] {
     display: flex !important;
     flex-direction: column;

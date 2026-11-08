@@ -739,11 +739,10 @@ export function customTranslator(moveCommand, oldFEN) {
     }
     let wxf = vschess.Node2WXF(moveCommand, oldFEN).move; 
     if(wxf === "None") return "";
-    const pieceMapR = {'R':'X', 'N':'M', 'B':'T', 'A':'S', 'K':'Tg', 'C':'P', 'P':'B'};
-    const pieceMapB = {'r':'x', 'n':'m', 'b':'t', 'a':'s', 'k':'tg', 'c':'p', 'p':'b'};
+    const pieceMap = {'R':'X', 'N':'M', 'B':'T', 'A':'S', 'K':'Tg', 'C':'P', 'P':'B'};
     const opMap = {'+': '.', '-': '/', '.': '-'};
 
-    let pStr = isRedTurn ? pieceMapR[pieceChar.toUpperCase()] : pieceMapB[pieceChar.toLowerCase()];
+    let pStr = pieceMap[pieceChar.toUpperCase()] || pieceChar.toUpperCase();
     let col1, action, col2;
     let pChar = wxf.charAt(0); 
     let isFrontRear = (pChar === '+' || pChar === '-');   

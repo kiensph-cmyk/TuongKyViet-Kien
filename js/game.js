@@ -45,11 +45,66 @@ setInterval(() => {
     }
 }, 50);
 
+export function formatPvSequenceVietnamese(pvMoves, startFen, maxMoves = 8) {
+    if (!pvMoves || pvMoves.length === 0 || !startFen) return "";
+    let currentFen = startFen;
+    const isRedStart = startFen.split(" ")[1] === "w";
+    let round = parseInt(startFen.split(" ")[5], 10) || 1;
+    let turn = isRedStart;
+    const parts = [];
+
+    for (let i = 0; i < Math.min(pvMoves.length, maxMoves); i++) {
+        const move = pvMoves[i];
+        if (!move || move.length < 4) break;
+        try {
+            const notation = customTranslator(move, currentFen);
+            if (!notation) break;
+            
+            if (turn) {
+                parts.push(`${round}. ${notation}`);
+            } else {
+                if (i === 0 && !isRedStart) {
+                    parts.push(`${round}... ${notation}`);
+                } else {
+                    parts.push(`${notation}`);
+                }
+                round++;
+            }
+            turn = !turn;
+            currentFen = vschess.fenMovePiece(currentFen, move);
+        } catch (e) {
+            break;
+        }
+    }
+    return parts.join(" ");
+}
+
 function updateBotTitleBoard() {
-    if (state.appMode !== 'vsbot' && state.appMode !== 'puzzle') return;
-    
     const titleHeader = document.getElementById('tab-title');
     if (!titleHeader) return;
+
+    if (state.appMode === 'analyze') {
+        const style = state.aiSettings.botStyle || state.vsBotSettings.botStyle || 'standard';
+        const tVal = state.aiSettings.tacticsValue !== undefined ? state.aiSettings.tacticsValue : 5;
+        let styleDisplay = "Cân Bằng (5/10)";
+        if (style === 'human') styleDisplay = "Giống Người";
+        else if (style === 'attack' || tVal >= 7) styleDisplay = `Tấn Công (${tVal}/10)`;
+        else if (style === 'defense' || tVal <= 3) styleDisplay = `Phòng Thủ (${tVal}/10)`;
+        else styleDisplay = `Cân Bằng (${tVal}/10)`;
+
+        let styleBadgeEl = document.getElementById('analyze-style-badge');
+        if (!styleBadgeEl) {
+            styleBadgeEl = document.createElement('div');
+            styleBadgeEl.id = 'analyze-style-badge';
+            styleBadgeEl.style.cssText = "margin-top: 8px; font-size: 13px; font-weight: 600; color: #0284c7; background: #e0f2fe; padding: 4px 12px; border-radius: 12px; display: inline-block;";
+            const strongTitle = titleHeader.querySelector('strong');
+            if (strongTitle) strongTitle.after(styleBadgeEl);
+        }
+        styleBadgeEl.innerText = `Lối chơi AI: ${styleDisplay}`;
+        return;
+    }
+
+    if (state.appMode !== 'vsbot' && state.appMode !== 'puzzle') return;
     
     const isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
     let isBotTurn = false;

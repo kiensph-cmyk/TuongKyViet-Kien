@@ -504,25 +504,30 @@ export function initEvents() {
     }
 
     function syncBotTacticsUI(sourceVal, isTacticsSlider = false) {
-        let style = state.vsBotSettings.botStyle || 'standard';
-        let tacticsVal = state.vsBotSettings.tacticsValue !== undefined ? state.vsBotSettings.tacticsValue : 5;
+        let style = state.vsBotSettings.botStyle || state.aiSettings.botStyle || 'standard';
+        let tacticsVal = state.vsBotSettings.tacticsValue !== undefined ? state.vsBotSettings.tacticsValue : 
+                         (state.aiSettings.tacticsValue !== undefined ? state.aiSettings.tacticsValue : 5);
 
         if (isTacticsSlider) {
             tacticsVal = parseInt(sourceVal, 10);
             state.vsBotSettings.tacticsValue = tacticsVal;
+            state.aiSettings.tacticsValue = tacticsVal;
             if (style !== 'human') {
                 if (tacticsVal <= 3) style = 'defense';
                 else if (tacticsVal >= 7) style = 'attack';
                 else style = 'standard';
                 state.vsBotSettings.botStyle = style;
+                state.aiSettings.botStyle = style;
             }
         } else {
             style = sourceVal;
             state.vsBotSettings.botStyle = style;
+            state.aiSettings.botStyle = style;
             if (style === 'defense' && tacticsVal > 3) tacticsVal = 2;
             else if (style === 'attack' && tacticsVal < 7) tacticsVal = 8;
             else if (style === 'standard') tacticsVal = 5;
             state.vsBotSettings.tacticsValue = tacticsVal;
+            state.aiSettings.tacticsValue = tacticsVal;
         }
 
         const badgeInfo = getBotTacticsBadgeInfo(tacticsVal);
@@ -556,7 +561,10 @@ export function initEvents() {
         if (inputSub) inputSub.innerText = badgeInfo.sub;
 
         storage.saveVsBot(state.vsBotSettings);
-        import('./game.js').then(module => module.updateVsBotToolButtons());
+        storage.saveAnalysis(state.aiSettings);
+        import('./game.js').then(module => {
+            module.updateVsBotToolButtons();
+        });
     }
 
     const menuBot = document.getElementById('menu-bot');

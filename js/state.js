@@ -25,7 +25,9 @@ const defaultSystem = {
 };
 
 const defaultAnalysis = {
-    skill: 20, threads: 1, hash: 64, multiPV: 1, moveTime: 1.0, depth: 30, 
+    skill: 20, threads: 1, hash: 64, multiPV: 1, moveTime: 1.0, depth: 30,
+    botStyle: "standard",
+    tacticsValue: 5
 };
 
 const defaultVsBot = {

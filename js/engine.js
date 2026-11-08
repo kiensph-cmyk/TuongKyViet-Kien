@@ -1,7 +1,7 @@
 // js/engine.js
 import { drawBestMoveArrow, clearArrow } from './board.js';
 import { initChartUI, addChartPoint, closeChartUI } from './chart.js';
-import { customTranslator, executeMove, instantJumpToNode, getMoveHistoryString } from './game.js'; 
+import { customTranslator, formatPvSequenceVietnamese, executeMove, instantJumpToNode, getMoveHistoryString } from './game.js'; 
 import { showToast, showAILoading, hideAILoading } from './ui.js';
 import { getStrictLegalMoves } from './rules.js';
 import { state, storage } from './state.js'; 
@@ -678,7 +678,7 @@ export async function fetchCloudBook(fen) {
     let url = `https://www.chessdb.cn/chessdb.php?action=queryall&board=${encodeURIComponent(shortFen)}`;
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
 
     fetch(url, { signal: controller.signal }).then(res => {
         clearTimeout(timeoutId);
@@ -710,14 +710,34 @@ export async function fetchCloudBook(fen) {
 // --- HÀM RENDER & XỬ LÝ CHUNG CHO CẢ CLOUD VÀ LOCAL ---
 function handleBookResults(movesList, isAITurn, isRedTurn, container, fen) {
     const currentRoundNum = parseInt(fen.split(" ")[5]) || 1;
-    let effectiveCloudLimit = state.appMode === 'vsbot' ? 0 : state.appSettings.cloudBookLimit;
+    let effectiveCloudLimit = state.appSettings.cloudBookLimit || 10;
     const canUseBook = state.appSettings.cloudBookEnabled && (currentRoundNum <= effectiveCloudLimit);
 
     // TRƯỜNG HỢP 1: Lượt AI và có sách hợp lệ
     if (isAITurn && canUseBook && movesList.length > 0) {
         let bestMove = movesList[0].move;
+
+        // Chọn nước đi theo phong cách chiến thuật (Công - Thủ) nếu có nhiều nước đi trong Book
+        const style = (state.appMode === 'vsbot') ? state.vsBotSettings.botStyle : (state.aiSettings.botStyle || 'standard');
+        const tacticsVal = (state.appMode === 'vsbot') ? 
+            (state.vsBotSettings.tacticsValue !== undefined ? state.vsBotSettings.tacticsValue : 5) : 
+            (state.aiSettings.tacticsValue !== undefined ? state.aiSettings.tacticsValue : 5);
+
+        if (movesList.length > 1 && (tacticsVal <= 3 || tacticsVal >= 7 || style === 'attack' || style === 'defense')) {
+            const pvCandidates = movesList.map(m => ({
+                bestMove: m.move,
+                relativeScore: parseInt(m.score) || (parseFloat(m.winrate) ? Math.round((parseFloat(m.winrate) - 50) * 10) : 0)
+            }));
+            const chosenMove = selectTacticalStyleMove(pvCandidates, fen, tacticsVal, movesList[0].move);
+            if (chosenMove) bestMove = chosenMove;
+        } else if (movesList.length > 1 && style === 'human') {
+            const topMoves = movesList.slice(0, 3);
+            bestMove = topMoves[Math.floor(Math.random() * topMoves.length)].move;
+        }
+
         if (getStrictLegalMoves(state.currentSituation, state.currentNode.fen).includes(bestMove)) {
-            let delayMs = state.appMode !== 'vsbot' ? (state.aiSettings.moveTime || 1) * 1000 : 1000;
+            // Độ trễ tự nhiên (300ms) để ván cờ cực nhanh, mượt mà, không chờ đợi 3s
+            const delayMs = 300;
             showAILoading();
             
             clearTimeout(cloudBookTimeoutId);
@@ -900,9 +920,28 @@ function triggerEngineOnly() {
     const strictMoves = getStrictLegalMoves(state.currentSituation, state.currentNode.fen);
     if (strictMoves.length === 0) return;
 
+    const isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
+    const willAIPlay = (isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack);
+
+    const style = (state.appMode === 'vsbot') ? state.vsBotSettings.botStyle : (state.aiSettings.botStyle || 'standard');
+    const tacticsVal = (state.appMode === 'vsbot') ? 
+        (state.vsBotSettings.tacticsValue !== undefined ? state.vsBotSettings.tacticsValue : 5) : 
+        (state.aiSettings.tacticsValue !== undefined ? state.aiSettings.tacticsValue : 5);
+
+    // Ánh xạ mức độ Công - Thủ sang Contempt (-50 đến +80) cho TẤT CẢ các chế độ
+    let contempt = 0;
+    if (tacticsVal <= 5) {
+        contempt = Math.round(-50 + (tacticsVal / 5.0) * 50);
+    } else {
+        contempt = Math.round(((tacticsVal - 5) / 5.0) * 80);
+    }
+    try { state.engineModule.sendCommand(`setoption name Contempt value ${contempt}`); } catch (e) {}
+
     if (state.appMode !== 'vsbot') {
         state.engineModule.sendCommand(`setoption name Skill Level value ${state.aiSettings.skill}`);
-        state.engineModule.sendCommand(`setoption name MultiPV value ${state.aiSettings.multiPV}`);
+        const searchPV = (willAIPlay && (tacticsVal <= 3 || tacticsVal >= 7 || style === 'attack' || style === 'defense')) ? 
+                         Math.max(3, state.aiSettings.multiPV || 1) : (state.aiSettings.multiPV || 1);
+        state.engineModule.sendCommand(`setoption name MultiPV value ${searchPV}`);
     }
 
     state.pvLines = []; clearArrow(); renderMultiPVList();
@@ -913,24 +952,9 @@ function triggerEngineOnly() {
     } else {
         state.engineModule.sendCommand(`position fen ${state.currentNode.fen}`);
     }
-    
-    const isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
-    const willAIPlay = (isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack);
 
     if (state.appMode === 'vsbot' && willAIPlay) {
-        const style = state.vsBotSettings.botStyle;
         const levelIdx = state.vsBotSettings.level - 1;
-        const tacticsVal = state.vsBotSettings.tacticsValue !== undefined ? state.vsBotSettings.tacticsValue : 5;
-
-        // Ánh xạ mức độ Công - Thủ sang Contempt (-50 đến +80)
-        let contempt = 0;
-        if (tacticsVal <= 5) {
-            contempt = Math.round(-50 + (tacticsVal / 5.0) * 50);
-        } else {
-            contempt = Math.round(((tacticsVal - 5) / 5.0) * 80);
-        }
-        try { state.engineModule.sendCommand(`setoption name Contempt value ${contempt}`); } catch (e) {}
-
         let profile;
         if (style === 'human') {
             profile = botProfiles.human[levelIdx];
@@ -977,8 +1001,15 @@ function renderMultiPVList() {
         let scoreStr = line.scoreText || "0";
         let blockColor = (line.relativeScore >= 0) ? "#1a73e8" : "#d32f2f";
         let winRateStr = calculateWinRatePercentage(line.relativeScore);
+
+        // Hiển thị toàn bộ biến tính toán của engine theo ký hiệu tiếng Việt
+        let pvVietnamese = "";
+        if (line.pvMoves && line.pvMoves.length > 0) {
+            pvVietnamese = formatPvSequenceVietnamese(line.pvMoves, state.currentNode.fen, 10);
+        }
+
         html += `
-            <div class="multipv-item" style="color: ${blockColor};">
+            <div class="multipv-item" data-move="${line.bestMove}" style="color: ${blockColor}; cursor: pointer;">
                 <div class="multipv-header">
                     <span>Biến số ${line.rank}</span>
                     <span class="multipv-bestmove">${notation}</span>
@@ -995,13 +1026,31 @@ function renderMultiPVList() {
                     <span>Thời gian: ${timeStr}</span>
                     <span>NPS: ${npsStr}</span>
                 </div>
+                ${pvVietnamese ? `
+                <div class="multipv-pv-seq" style="margin-top: 6px; padding: 6px 8px; background: rgba(0,0,0,0.035); border: 1px dashed rgba(0,0,0,0.12); border-radius: 6px; font-size: 12.5px; font-family: monospace, sans-serif; font-weight: 600; line-height: 1.5; color: #1e293b; word-break: break-word;">
+                    <span style="font-size: 11px; color: #64748b; font-weight: normal; display: block; margin-bottom: 2px;">Dãy tính toán:</span>
+                    ${pvVietnamese}
+                </div>` : ''}
             </div>`;
     });
     container.innerHTML = html;
+
+    container.querySelectorAll('.multipv-item').forEach(item => {
+        item.onclick = () => {
+            const m = item.getAttribute('data-move');
+            if (m && state.appMode === 'analyze' && !state.isAutoPlaying && !state.isAnimating) {
+                if (getStrictLegalMoves(state.currentSituation, state.currentNode.fen).includes(m)) {
+                    executeMove(m);
+                }
+            }
+        };
+    });
 }
 
 export function handleEngineOutput(text) {
-    console.log('%c[ENGINE -> GUI] ' + text, 'color: #008a3e;');
+    if (!text.startsWith("info")) {
+        console.log('%c[ENGINE -> GUI] ' + text, 'color: #008a3e;');
+    }
     if (state.isChartRunning) {
         if (text.includes("score cp")) {
             const cpMatch = text.match(/score cp (-?\d+)/);
@@ -1083,8 +1132,14 @@ export function handleEngineOutput(text) {
         const timeMatch = text.match(/time (\d+)/);
         const npsMatch = text.match(/nps (\d+)/);
         const multipvMatch = text.match(/multipv (\d+)/);
-        const pvMatch = text.match(/ pv ([a-i][0-9][a-i][0-9])(?: ([a-i][0-9][a-i][0-9]))?/);
-        
+
+        const pvIndex = text.indexOf(" pv ");
+        let pvMoves = [];
+        if (pvIndex !== -1) {
+            const rawPv = text.substring(pvIndex + 4).trim();
+            pvMoves = rawPv.split(/\s+/).filter(m => /^[a-i][0-9][a-i][0-9]$/.test(m));
+        }
+
         let rank = multipvMatch ? parseInt(multipvMatch[1]) : 1;
         let isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
         let turnPrefix = isRedTurn ? "Điểm Đỏ: " : "Điểm Đen: "; 
@@ -1095,34 +1150,36 @@ export function handleEngineOutput(text) {
             scoreText = (relativeScore > 0 ? "+" : "") + relativeScore;
             if (relativeScore === 0) scoreText = "0";
             finalScoreForBar = isRedTurn ? cp : -cp;
-            if (rank === 1) {
-                let winRate = 50 + (finalScoreForBar / 20); 
-                if (winRate > 100) winRate = 100; if (winRate < 0) winRate = 0;
-                const scoreBarFill = document.getElementById("score-bar-fill");
-                if (scoreBarFill) scoreBarFill.style.width = `${winRate}%`;
-                const scoreTextEl = document.getElementById("score-text");
-                if (scoreTextEl) scoreTextEl.innerText = turnPrefix + scoreText;
-            }
         } 
         else if (scoreMateMatch) {
             let mate = parseInt(scoreMateMatch[1]); relativeScore = mate > 0 ? 10000 : -10000;
             scoreText = `chiếu hết(${mate > 0 ? '+' : '-'}${Math.abs(mate)})`;
-            if (rank === 1) {
-                let isRedWin = (isRedTurn && mate > 0) || (!isRedTurn && mate < 0);
-                const scoreBarFill = document.getElementById("score-bar-fill");
-                if (scoreBarFill) scoreBarFill.style.width = isRedWin ? `100%` : `0%`;
-                const scoreTextEl = document.getElementById("score-text");
-                if (scoreTextEl) scoreTextEl.innerText = turnPrefix + scoreText;
-            }
+            finalScoreForBar = (isRedTurn && mate > 0) || (!isRedTurn && mate < 0) ? 2000 : -2000;
         }
-        if (pvMatch) {
+
+        if (pvMoves.length > 0) {
             state.pvLines[rank - 1] = {
-                rank: rank, bestMove: pvMatch[1], ponderMove: pvMatch[2] || null,
+                rank: rank, bestMove: pvMoves[0], ponderMove: pvMoves[1] || null,
+                pvMoves: pvMoves,
                 scoreText: scoreText, relativeScore: relativeScore, 
                 depth: depthMatch ? parseInt(depthMatch[1]) : 0, time: timeMatch ? parseInt(timeMatch[1]) : 0, nps: npsMatch ? parseInt(npsMatch[1]) : 0
             };
             const now = Date.now();
-            if (now - lastUiUpdateTime > 100) {
+            if (now - lastUiUpdateTime > 120) {
+                if (rank === 1) {
+                    const scoreBarFill = document.getElementById("score-bar-fill");
+                    const scoreTextEl = document.getElementById("score-text");
+                    if (scoreCpMatch) {
+                        let winRate = 50 + (finalScoreForBar / 20); 
+                        if (winRate > 100) winRate = 100; if (winRate < 0) winRate = 0;
+                        if (scoreBarFill) scoreBarFill.style.width = `${winRate}%`;
+                        if (scoreTextEl) scoreTextEl.innerText = turnPrefix + scoreText;
+                    } else if (scoreMateMatch) {
+                        let isRedWin = (isRedTurn && relativeScore > 0) || (!isRedTurn && relativeScore < 0);
+                        if (scoreBarFill) scoreBarFill.style.width = isRedWin ? `100%` : `0%`;
+                        if (scoreTextEl) scoreTextEl.innerText = turnPrefix + scoreText;
+                    }
+                }
                 renderMultiPVList(); 
                 drawBestMoveArrow();
                 lastUiUpdateTime = now;
@@ -1133,11 +1190,31 @@ export function handleEngineOutput(text) {
     else if (text.startsWith("bestmove")) {
         isEngineSearching = false;
 
+        const scoreBarFill = document.getElementById("score-bar-fill");
+        const scoreTextEl = document.getElementById("score-text");
+        if (state.pvLines.length > 0 && state.pvLines[0]) {
+            const line1 = state.pvLines[0];
+            const isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
+            const turnPrefix = isRedTurn ? "Điểm Đỏ: " : "Điểm Đen: ";
+            if (scoreTextEl) scoreTextEl.innerText = turnPrefix + line1.scoreText;
+            if (scoreBarFill) {
+                let winRate = 50 + ((isRedTurn ? line1.relativeScore : -line1.relativeScore) / 20);
+                if (winRate > 100) winRate = 100; if (winRate < 0) winRate = 0;
+                scoreBarFill.style.width = `${winRate}%`;
+            }
+        }
+
         renderMultiPVList();
         drawBestMoveArrow();
 
+        const wasHintAction = (pendingAction === 'hint');
+
         if (pendingAction) {
             executePendingAction();
+            if (wasHintAction) {
+                const hintNotation = customTranslator(bestMove, state.currentNode.fen) || bestMove;
+                showToast(`💡 Gợi ý của AI: ${hintNotation}`);
+            }
             return; 
         }
 
@@ -1160,11 +1237,16 @@ export function handleEngineOutput(text) {
         }
 
         if ((isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack)) {
-            if (state.appMode === 'vsbot' && state.vsBotSettings.botStyle === 'human') {
-                const levelIdx = state.vsBotSettings.level - 1;
-                const currentLevelData = botProfiles.human[levelIdx];
+            const style = (state.appMode === 'vsbot') ? state.vsBotSettings.botStyle : (state.aiSettings.botStyle || 'standard');
+            const tacticsVal = (state.appMode === 'vsbot') ? 
+                (state.vsBotSettings.tacticsValue !== undefined ? state.vsBotSettings.tacticsValue : 5) :
+                (state.aiSettings.tacticsValue !== undefined ? state.aiSettings.tacticsValue : 5);
+
+            if (style === 'human') {
+                const levelIdx = (state.appMode === 'vsbot') ? (state.vsBotSettings.level - 1) : 9;
+                const currentLevelData = botProfiles.human[levelIdx] || botProfiles.human[9];
                 let parsedMultiPVList = state.pvLines.filter(p => p).map(p => ({
-                    move: p.bestMove, cp: p.relativeScore, isMate: p.scoreText.includes('chiếu hết')
+                    move: p.bestMove, cp: p.relativeScore, isMate: p.scoreText && p.scoreText.includes('chiếu hết')
                 }));
                 parsedMultiPVList.sort((a, b) => b.cp - a.cp);
     
@@ -1172,15 +1254,9 @@ export function handleEngineOutput(text) {
 
                 state.pendingAIMove = resultMove ? resultMove : bestMove; 
                 hideAILoading();
-            } else if (state.appMode === 'vsbot') {
-                const style = state.vsBotSettings.botStyle;
-                const tacticsVal = state.vsBotSettings.tacticsValue !== undefined ? state.vsBotSettings.tacticsValue : 5;
-                if (tacticsVal <= 3 || tacticsVal >= 7 || style === 'attack' || style === 'defense') {
-                    const tacticalMove = selectTacticalStyleMove(state.pvLines, state.currentNode.fen, tacticsVal, bestMove);
-                    state.pendingAIMove = tacticalMove || bestMove;
-                } else {
-                    state.pendingAIMove = bestMove;
-                }
+            } else if (tacticsVal <= 3 || tacticsVal >= 7 || style === 'attack' || style === 'defense') {
+                const tacticalMove = selectTacticalStyleMove(state.pvLines, state.currentNode.fen, tacticsVal, bestMove);
+                state.pendingAIMove = tacticalMove || bestMove;
                 hideAILoading();
             } else {
                 state.pendingAIMove = bestMove;
@@ -1190,6 +1266,7 @@ export function handleEngineOutput(text) {
             hideAILoading();
         }
     }
+}
 }
 
 // =====================================================================

@@ -301,8 +301,17 @@ export async function initPikafish(forceType = null) {
     applyEngineHardwareLimits(type);
     attachCrashHandlers();
 
-    const basePath = window.location.href.replace(/\/[^\/]*$/, '');
+    const basePath = new URL('.', window.location.href).href.replace(/\/$/, '');
     //console.log("Base Path:", basePath);
+
+    // Đảm bảo màn hình không bị treo nếu mạng chậm hoặc engine đang khởi động
+    setTimeout(() => {
+        const overlay = document.getElementById('loading-overlay');
+        if (overlay && overlay.style.display !== 'none' && overlay.style.opacity !== '0') {
+            overlay.style.opacity = '0';
+            setTimeout(() => { overlay.style.display = 'none'; }, 400);
+        }
+    }, 3500);
 
     EngineSentinel.arm(state.aiSettings.hash, state.aiSettings.threads);
 
@@ -461,7 +470,11 @@ function onEngineReady(type) {
 function onEngineError(err) {
     console.error("Lỗi khởi tạo AI (Hàm onEngineError):", err);
     const overlay = document.getElementById('loading-overlay');
-    if(overlay) overlay.innerHTML = `<h2 style='color:red; text-align:center;'>Lỗi tải Engine AI</h2><p style='text-align:center;'>${err.toString()}</p>`;
+    if (overlay) { 
+        overlay.style.opacity = '0'; 
+        setTimeout(() => { overlay.style.display = 'none'; }, 400); 
+    }
+    showToast("⚠️ Khởi tạo AI gặp sự cố. Bàn cờ vẫn sử dụng bình thường.");
 }
 export function selectHumanLikeMove(parsedMultiPVList, currentLevelData) {
     if (!parsedMultiPVList || parsedMultiPVList.length === 0) return null;

@@ -20,8 +20,14 @@ app.use((req, res, next) => {
     next();
 });
 
-// Cho phép truy cập file tĩnh (HTML, CSS, JS)
-app.use(express.static(__dirname));
+// Cho phép truy cập file tĩnh (HTML, CSS, JS, WASM...)
+app.use(express.static(__dirname, {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.wasm')) {
+            res.setHeader('Content-Type', 'application/wasm');
+        }
+    }
+}));
 
 // Route trang chủ
 app.get('/', (req, res) => {
@@ -80,7 +86,7 @@ app.post('/api/pikafish-recognize', upload.single('image'), async (req, res) => 
 });
 
 // Bật Server
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
     console.log(`\n✅ Máy chủ đã chạy thành công!`);
-    console.log(`🎮 Truy cập: http://localhost:${port}\n`);
+    console.log(`🎮 Đang lắng nghe trên: http://0.0.0.0:${port}\n`);
 });

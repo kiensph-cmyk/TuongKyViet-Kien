@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = '0.3.7'; 
+const CACHE_NAME = '0.3.8'; 
 
 const urlsToCache = [
     './',
@@ -23,6 +23,8 @@ const urlsToCache = [
     './manifest.json',
     './vschess/jquery.js',
     './vschess/vschess.function.js',
+    './vschess/gif.js',
+    './vschess/gif.worker.js',
 
     './rules/xiangqi_rule.js',
     './rules/xiangqi_rule.wasm',
@@ -216,6 +218,29 @@ self.addEventListener('fetch', (event) => {
     if (event.request.url.includes('/api/')) return;
     if (event.request.url.startsWith('chrome-extension://')) return;
 
+    // Chiến lược Network-First cho tài liệu HTML để cập nhật ngay phiên bản mới nhất khi có mạng
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request)
+                .then((networkResponse) => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        const responseToCache = networkResponse.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(event.request, responseToCache);
+                        });
+                    }
+                    return networkResponse;
+                })
+                .catch(() => {
+                    return caches.match(event.request).then(cached => {
+                        return cached || caches.match('./index.html');
+                    });
+                })
+        );
+        return;
+    }
+
+    // Các tài nguyên tĩnh khác: Cache-First, cập nhật ngầm nếu có phiên bản mới
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
             if (cachedResponse) {

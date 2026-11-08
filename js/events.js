@@ -1900,7 +1900,7 @@ export function initEvents() {
 
             try {
                 // Tải worker.js dạng blob để tránh lỗi CORS Web Worker (Rất quan trọng)
-                const workerReq = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js');
+                const workerReq = await fetch('./vschess/gif.worker.js');
                 const workerText = await workerReq.text();
                 const workerBlob = new Blob([workerText], { type: 'application/javascript' });
                 const workerUrl = URL.createObjectURL(workerBlob);

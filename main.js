@@ -10,23 +10,30 @@ import { preloadImages, initCanvas } from './js/board.js';
 // Cài đặt Event Toàn cục
 initEvents();
 
-// Vòng đời ứng dụng (Khi trang Web tải xong)
-window.onload = async () => {
-    
-    await preloadImages();
-    initCanvas();
+// Vòng đời ứng dụng (Khởi động chắc chắn dù trang tải nhanh hay chậm)
+async function startApp() {
+    try {
+        await preloadImages();
+        initCanvas();
+        initGame(undefined, true);
+        fetchAppVersion();
 
-    // Truyền tham số thứ 2 là 'true' để hệ thống bóc LocalStorage ra dùng
-    initGame(undefined, true);
-    
-    // Lấy thông tin phiên bản từ file Service Worker để in ra Cài đặt
-    fetchAppVersion();
+        if (window.ResizeObserver) {
+            const resizeObserver = new ResizeObserver(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+            resizeObserver.observe(document.body);
+        }
+    } catch (e) {
+        console.error("❌ App startup error:", e);
+    }
+}
 
-    const resizeObserver = new ResizeObserver(() => {
-        window.dispatchEvent(new Event('resize'));
-    });
-    resizeObserver.observe(document.body);
-};
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', startApp);
+} else {
+    startApp();
+}
 
 // Đăng ký Service Worker
 if ('serviceWorker' in navigator) {
